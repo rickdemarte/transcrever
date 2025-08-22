@@ -9,7 +9,13 @@
 ## 1️⃣ Pré‑requisitos
 
 **Arquivo de áudio**: *Caso você não tenha o arquivo de áudio no computador que vai executar o script, você pode usar o upload.py para isso.*
-*O passo a paso [está aqui](README_Upload.md)*
+
+*O passo a passo [está aqui](README_Upload.md).*
+
+**AWS-Cli**: *Você precisa do aws-cli instalado e configurado.*
+
+*O passo a passo [está aqui](README_AWS-Cli.md).*
+
 
 | Ferramenta | Versão mínima | Como instalar |
 |------------|----------------|---------------|
