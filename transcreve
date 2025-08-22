@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# ------------------------------------------------------------
+# Transcrição de áudio usando AWS Transcribe
+# ------------------------------------------------------------
+# Uso: ./transcreve caminho/do/arquivo.mp3
+# ------------------------------------------------------------
+# Autor: Henrique Ribeiro - https://github.com/rickdermate
+# ------------------------------------------------------------
+
+set -euo pipefail
+
+# ---------- Funções de utilidade ----------
+log() {
+    local type="$1"
+    local msg="$2"
+    echo -e "[$(date +'%Y-%m-%d %H:%M:%S')] [$type] $msg"
+}
+
+die() {
+    log "ERRO" "$1"
+    exit 1
+}
+
+# ---------- Verificações iniciais ----------
+[[ $# -eq 1 ]] || die "Uso: $0 <caminho/para/arquivo>"
+ARQUIVO="$1"
+
+[[ -f "$ARQUIVO" ]] || die "Arquivo não encontrado: $ARQUIVO"
+
+
+# ---------- Função de exportação ----------
+# $1 = caminho do JSON de saída
+# $2 = caminho do CSV a ser criado
+export_audio_segments_to_csv() {
+    local json_file="$1"
+    local csv_file="$2"
+
+    [[ -f "$json_file" ]] || die "Arquivo JSON não encontrado: $json_file"
+
+    # Verifica se jq está disponível
+    command -v jq >/dev/null 2>&1 || die "jq não está instalado. Instale jq para usar esta função."
+
+    # "Corrige identação do arquivo JSON"
+    
+    jq . $json_file > tmp.json
+    mv tmp.json $json_file
+
+
+    # "Extrai cabeçalho (todos os campos do primeiro segmento)"
+    local header
+    header=$(jq -r '
+        .results.audio_segments[0] |
+        keys_unsorted |
+        @csv
+    ' "$json_file") || die "Falha ao gerar cabeçalho CSV."
+
+    echo Gera o CSV completo
+    {
+        echo "$header"
+        jq -r '
+            .results.audio_segments[]
+            | [ .id,
+                .transcript,
+                .start_time,
+                .end_time,
+                .speaker_label,
+                (.items | @json)
+                ]                                          
+            | @csv' "$json_file"
+    } > "$csv_file" || die "Falha ao gerar CSV."
+
+    log "SUCESSO" "Segmentos de áudio exportados para CSV em '$csv_file'."
+}
+
+# ---------- Variáveis ----------
+BUCKET="NOMEDOBUCKET"
+BUCKET_AUDIO="s3://$BUCKET/audio"
+BUCKET_TRANSCRICAO="s3://$BUCKET/transcriptions"
+
+# Nome base do arquivo (sem caminho)
+BASE_ARQUIVO=$(basename "$ARQUIVO")
+# Extensão (media-format) em minúsculas
+FORMATO="${BASE_ARQUIVO##*.}"
+FORMATO=$(echo "$FORMATO" | tr '[:upper:]' '[:lower:]')
+
+# Nome único para o job
+JOB_NAME="TranscricaoEntrevista_$(date +"%Y%m%d%H%M%S")"
+
+# ---------- Upload do áudio ----------
+log "INFO" "Fazendo upload de '$ARQUIVO' para $BUCKET_AUDIO ..."
+aws s3 cp "$ARQUIVO" "$BUCKET_AUDIO/$BASE_ARQUIVO" || die "Falha ao fazer upload para S3"
+
+# ---------- Início do job de transcrição ----------
+log "INFO" "Iniciando job de transcrição '$JOB_NAME' ..."
+aws transcribe start-transcription-job \
+    --transcription-job-name "$JOB_NAME" \
+    --region us-west-2 \
+    --language-code "pt-BR" \
+    --media-format "$FORMATO" \
+    --media "{\"MediaFileUri\":\"$BUCKET_AUDIO/$BASE_ARQUIVO\"}" \
+    --output-bucket-name "$BUCKET" \
+    --settings "{\"ShowSpeakerLabels\":true,\"MaxSpeakerLabels\":2}" \
+    --output-key "transcriptions/${BASE_ARQUIVO%.*}.json" \
+    --no-cli-pager || die "Falha ao iniciar o job de transcrição"
+
+# ---------- Aguardando conclusão ----------
+log "INFO" "Aguardando término do job (verificando a cada 30s)..."
+while true; do
+    STATUS=$(aws transcribe get-transcription-job \
+        --transcription-job-name "$JOB_NAME" \
+        --query 'TranscriptionJob.TranscriptionJobStatus' \
+        --output text )
+
+    case "$STATUS" in
+        COMPLETED)
+            log "INFO" "Job concluído com sucesso."
+            break
+            ;;
+        FAILED)
+            die "Job falhou. Verifique o console da AWS para detalhes."
+            ;;
+        IN_PROGRESS|QUEUED)
+            log "INFO" "Status atual: $STATUS. Aguardando..."
+            sleep 30
+            ;;
+        *)
+            die "Status inesperado: $STATUS"
+            ;;
+    esac
+done
+
+# ---------- Download da transcrição ----------
+DESTINO_LOCAL="${BASE_ARQUIVO%.*}.json"
+log "INFO" "Baixando resultado para '$DESTINO_LOCAL' ..."
+aws s3 cp "$BUCKET_TRANSCRICAO/${BASE_ARQUIVO%.*}.json" "$DESTINO_LOCAL" || die "Falha ao baixar a transcrição"
+
+log "SUCESSO" "Transcrição salva em '$DESTINO_LOCAL'."
+
+
+# ---------- Exporta segmentos de áudio para CSV ----------
+CSV_DESTINO="${BASE_ARQUIVO%.*}.csv"
+export_audio_segments_to_csv "$DESTINO_LOCAL" "$CSV_DESTINO"
