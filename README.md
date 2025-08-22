@@ -8,13 +8,16 @@
 
 ## 1️⃣ Pré‑requisitos
 
+**Arquivo de áudio**: *Caso você não tenha o arquivo de áudio no computador que vai executar o script, você pode usar o upload.py para isso.*
+*O passo a paso [está aqui](README_Upload.md)*
+
 | Ferramenta | Versão mínima | Como instalar |
 |------------|----------------|---------------|
 | **Bash** | 4.x+ (já vem na maioria dos *nix) | No Microsoft Windows: Veja [Como Instalar WSL](https://learn.microsoft.com/pt-br/windows/wsl/install) |
 | **AWS CLI** | 2.x | `curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"` → unzip → `sudo ./aws/install` |
 | **jq** (processador JSON) | 1.6 | `sudo apt-get install jq`  /  `brew install jq` |
 | **Credenciais AWS** (Access Key + Secret) configuradas | – | `aws configure` (defina *region* e *output* padrão) |
-| **Bucket S3** | – | Crie via console ou CLI (`aws s3 mb s3://ribeiro`) |
+| **Bucket S3** | – | Crie via console ou CLI (`aws s3 mb s3://BUCKET`) |
 
 > **Dica:** O script usa a região **`us-west-2`**; ajuste se necessário (variável `--region`).
 
@@ -85,9 +88,9 @@ chmod +x transcreve
 
 | Variável | Valor padrão | Comentário |
 |----------|--------------|------------|
-| `BUCKET` | `ribeiro` | Nome do bucket S3 usado para áudio e transcrições |
-| `BUCKET_AUDIO` | `s3://ribeiro/audio` | Prefixo onde o áudio é armazenado |
-| `BUCKET_TRANSCRICAO` | `s3://ribeiro/transcriptions` | Onde o JSON de saída será salvo |
+| `BUCKET` | `BUCKET` | Nome do bucket S3 usado para áudio e transcrições |
+| `BUCKET_AUDIO` | `s3://BUCKET/audio` | Prefixo onde o áudio é armazenado |
+| `BUCKET_TRANSCRICAO` | `s3://BUCKET/transcriptions` | Onde o JSON de saída será salvo |
 | `JOB_NAME` | `TranscricaoEntrevista_YYYYMMDDHHMMSS` | Nome único do job |
 | `--region` | `us-west-2` | Região da AWS – altere se seu bucket estiver em outra região |
 | `--language-code` | `pt-BR` | Idioma da transcrição – troque para `en-US`, `es-ES`, etc., se precisar |
@@ -140,7 +143,7 @@ aws transcribe get-transcription-job \
     --output text
 
 # 4️⃣ Baixar o JSON sem usar o script (exemplo)
-aws s3 cp s3://ribeiro/transcriptions/arquivo.json .
+aws s3 cp s3://BUCKET/transcriptions/arquivo.json .
 
 # 5️⃣ Converter JSON → CSV (mesma lógica da função)
 jq -r '
